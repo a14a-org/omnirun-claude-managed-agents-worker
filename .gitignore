@@ -1,0 +1,18 @@
+# Build output
+/bin/
+/claude-worker
+*.exe
+*.test
+*.out
+
+# Go
+/vendor/
+
+# Local env / credentials (never commit)
+*.env
+claude-worker.env
+.env
+
+# Editor / OS
+.DS_Store
+*.swp

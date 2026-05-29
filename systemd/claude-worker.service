@@ -1,0 +1,27 @@
+[Unit]
+Description=OmniRun Claude Managed Agents worker (polls Anthropic, runs sessions in microVMs)
+Documentation=https://github.com/a14a-org/omnirun-claude-managed-agents-worker/blob/main/README.md
+After=network-online.target omnirun.service
+Wants=network-online.target
+# Don't hammer Anthropic on a crash-loop (e.g. bad credentials).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Credentials + endpoint. ANTHROPIC_API_KEY must NOT be in this file --
+# claude-worker refuses to start if it is set (it would leak into a sandbox).
+EnvironmentFile=/opt/omnirun/configs/claude-worker.env
+ExecStart=/opt/omnirun/claude-worker -spawn /opt/omnirun/scripts/spawn.sh
+Restart=always
+RestartSec=5
+# Graceful drain: claude-worker relays SIGTERM to `ant`, which finishes
+# in-flight sessions before exiting. Match/exceed OMNIRUN_MAX_RUNTIME (7200s).
+KillSignal=SIGTERM
+TimeoutStopSec=7200
+# Light hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
