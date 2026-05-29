@@ -1,0 +1,15 @@
+# Run the poller against an OmniRun endpoint. Copy .env.example to .env, fill it
+# in, then: docker compose up -d --build
+services:
+  claude-worker:
+    build: .
+    image: omnirun-claude-worker
+    restart: unless-stopped
+    # Drain in-flight sessions on stop instead of killing them.
+    stop_grace_period: 2h
+    environment:
+      ANTHROPIC_ENVIRONMENT_KEY: ${ANTHROPIC_ENVIRONMENT_KEY:?set in .env}
+      ANTHROPIC_ENVIRONMENT_ID: ${ANTHROPIC_ENVIRONMENT_ID:?set in .env}
+      OMNIRUN_API: ${OMNIRUN_API:-https://api.omnirun.io}
+      OMNIRUN_API_KEY: ${OMNIRUN_API_KEY:?set in .env}
+      OMNIRUN_MAX_CONCURRENT: ${OMNIRUN_MAX_CONCURRENT:-5}

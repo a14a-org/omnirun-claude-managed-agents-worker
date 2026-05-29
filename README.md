@@ -55,6 +55,8 @@ evolving) worker protocol to maintain.
 
 | Path | Role |
 |------|------|
+| `Dockerfile` | Self-contained poller image. Builds `claude-worker` from source, bundles the pinned `ant` CLI + `spawn.sh`. No KVM needed. |
+| `docker-compose.yml` / `.env.example` | One-command run of the poller against an OmniRun endpoint. |
 | `cmd/claude-worker/main.go` | Host-side poller. Thin supervisor around `ant beta:worker poll`. Stdlib only. |
 | `scripts/spawn.sh` | Per-session launcher invoked by `ant`. Creates + tears down one microVM per session. |
 | `scripts/build-rootfs-claude-agent.sh` | Builds the `claude-agent` rootfs (bash + pinned `ant` CLI; no Node/npm). |
@@ -101,16 +103,57 @@ fits your threat model:
   download). Note: Anthropic infra (model + skills) uses `api.anthropic.com`
   only — there is no separate skills CDN host to allow-list.
 
-## Prerequisites
+## What you need
 
-- An OmniRun host with Firecracker, LVM (`vg0/thinpool`), the in-VM agent at
-  `/opt/omnirun/bin/agent`, and a kernel at `/opt/omnirun/vmlinux`.
-- Docker on the build host (for building the rootfs).
-- The Anthropic `ant` CLI on the host running the poller.
-- An Anthropic account with access to Managed Agents (beta).
-- Go 1.26+ to build the poller.
+The worker has two halves with different requirements.
 
-## Quick start
+**To run the poller** (most users):
+
+- An Anthropic account with Managed Agents access (beta), a self-hosted
+  environment, and an environment key.
+- An OmniRun API endpoint that has the `claude-agent` template, plus an API key.
+  Use the hosted `https://api.omnirun.io`, or your own OmniRun deployment.
+- Either Docker (recommended) or Go 1.26+ and the `ant` CLI.
+
+The poller needs **no KVM and no privileges**. It only polls Anthropic and calls
+the OmniRun API over HTTP, so it runs anywhere a container runs (a small VM, a
+PaaS, your laptop).
+
+**To also self-host the executor** (advanced): a Linux host with `/dev/kvm`
+(bare metal or a nested-virt VM) running OmniRun, with Firecracker, LVM
+(`vg0/thinpool`), the in-VM agent at `/opt/omnirun/bin/agent`, and a kernel at
+`/opt/omnirun/vmlinux`. The `build-rootfs` / `create-snapshot` scripts build the
+`claude-agent` template on that host. Cloud Run, DigitalOcean App Platform, and
+standard droplets cannot run the executor (no `/dev/kvm`); they can still run the
+poller.
+
+## Quick start (Docker)
+
+1. In the Anthropic Console, create a **self-hosted** Managed Agents environment.
+   Note its environment ID (`env_...`) and generate an environment key.
+2. Pick an OmniRun endpoint that has the `claude-agent` template (hosted
+   `https://api.omnirun.io`, or your own deployment) and get an API key.
+3. Run the poller:
+
+   ```bash
+   cp .env.example .env     # fill in the four values
+   docker compose up -d --build
+   ```
+
+   Or without compose:
+
+   ```bash
+   docker build -t omnirun-claude-worker .
+   docker run -d \
+     -e ANTHROPIC_ENVIRONMENT_KEY=... -e ANTHROPIC_ENVIRONMENT_ID=env_... \
+     -e OMNIRUN_API=https://api.omnirun.io -e OMNIRUN_API_KEY=omr_... \
+     omnirun-claude-worker
+   ```
+
+That is the whole setup when you use a hosted OmniRun endpoint. The sections
+below cover running the poller without Docker, and self-hosting the executor.
+
+## Full setup (without Docker, or self-hosting the executor)
 
 ### 1. Create a self-hosted environment + environment key (Anthropic Console)
 
@@ -207,9 +250,9 @@ not start if `ANTHROPIC_API_KEY` is present in the env file.
 
 ## Verifying egress behavior
 
-Because per-domain egress is not yet enforced (see limitations), verify what
-your setup actually does before trusting it. Create a `claude-agent` sandbox
-manually and probe it:
+Egress is open by default and per-domain filtering is opt-in (see limitations),
+so verify what your setup actually does before trusting it. Create a
+`claude-agent` sandbox manually and probe it:
 
 ```bash
 SID=$(curl -fsS -X POST "$OMNIRUN_API/sandboxes" \
