@@ -6,7 +6,7 @@ sessions inside [OmniRun][omnirun] Firecracker microVMs on your own hardware.
 **Anthropic runs the agent loop, the model, and skills hosting.** This worker
 runs only the tool-call side of each session: it polls Anthropic's work queue,
 claims a session, and executes that session's tool calls (`bash` / `read` /
-`write` / `edit` / `glob` / `grep`) inside a fresh, network-locked-down OmniRun
+`write` / `edit` / `glob` / `grep`) inside a fresh, VM-isolated OmniRun
 microVM on your box. Outputs are written to `/mnt/session/outputs` and
 (optionally) copied back to the host. The sandbox is destroyed when the session
 ends.
@@ -16,7 +16,7 @@ Managed Agents (e.g. Modal, Daytona): it is a thin, auditable adapter between
 Anthropic's worker protocol and OmniRun's sandbox API.
 
 [cma]: https://docs.anthropic.com/
-[omnirun]: https://github.com/a14a-org/omnirun
+[omnirun]: https://omnirun.io
 
 ## How it works
 
@@ -38,7 +38,7 @@ deletes the sandbox.
 ```
 Anthropic queue ──poll──> claude-worker (host) ──on-work──> spawn.sh
                                                               │
-                                                              ├─ POST /sandboxes  (claude-agent template, egress allowlist)
+                                                              ├─ POST /sandboxes  (claude-agent template)
                                                               ├─ POST /sandboxes/{id}/commands  (ant beta:worker run, background)
                                                               ├─ poll  /sandboxes/{id}/commands/{pid}
                                                               ├─ (opt) download /mnt/session/outputs
@@ -71,24 +71,23 @@ evolving) worker protocol to maintain.
 - `ANTHROPIC_API_KEY` (the org API key) is **never** set on the host poller and
   **never** forwarded into a sandbox. Both `cmd/claude-worker` and `spawn.sh`
   hard-refuse to run if `ANTHROPIC_API_KEY` is present in their environment.
-- Each sandbox is created with `internet: true` plus a coarse egress allowlist
-  (`api.anthropic.com`, a fixed DNS resolver, and the skills CDN host). See the
-  honest limitations below for exactly what that allowlist does and does not
-  enforce today.
+- Each sandbox is created with `internet: true` (open egress). Real agents need
+  package registries and git, so the worker does not lock egress down by
+  default. To restrict it, enable the opt-in SNI egress proxy (see below).
 
 ## Honest limitations
 
 These are real constraints today, stated plainly so you can decide whether this
 fits your threat model:
 
-- **No per-domain egress filtering (yet).** OmniRun's network controls are
-  internet **on/off** plus full **air-gap**. The `allowDomains` / `allowIPs`
-  fields in `spawn.sh` express the *intended* allowlist, but the enforcement is
-  not yet per-domain — a sandbox with `internet: true` can in principle reach
-  hosts outside the listed domains. If you need a hard egress boundary today,
-  run the worker on a host/network whose own firewall enforces the allowlist, or
-  use OmniRun's air-gap mode (which breaks skills download and the queue
-  connection). Per-domain egress enforcement is planned, not shipped.
+- **Egress is open by default.** OmniRun's network controls are: `internet:
+  false` (a true L3 air-gap), `internet: true` (full outbound), or an **opt-in
+  per-domain SNI proxy**. The worker uses open egress because agents typically
+  need package registries and git. To enforce an allowlist, set `sniProxy: true`
+  with `allowDomains` in the `spawn.sh` create body — guest TLS/443 is then
+  routed through an in-netns SNI-filtering proxy that forwards only matching
+  hostnames and drops the rest. It blocks everything not listed (including
+  pypi/npm), so enable it only for workloads that don't need them.
 - **Memory is not supported.** Anthropic's agent Memory feature is not wired up
   in this worker.
 - **No compliance certifications.** This is an open-source adapter. There are no
@@ -98,7 +97,9 @@ fits your threat model:
   var contract may change. Pin and test the `ant` version you ship.
 - **A few details require on-box confirmation** before a clean end-to-end run —
   see the `TODO(verify-on-box)` notes in `scripts/build-rootfs-claude-agent.sh`
-  and `scripts/spawn.sh` (exact skills CDN host, `files/list` response shape).
+  and `scripts/spawn.sh` (e.g. the `files/list` response shape for output
+  download). Note: Anthropic infra (model + skills) uses `api.anthropic.com`
+  only — there is no separate skills CDN host to allow-list.
 
 ## Prerequisites
 
@@ -161,7 +162,6 @@ export OMNIRUN_API_KEY=...                  # X-API-Key for the local OmniRun AP
 # Optional:
 export OMNIRUN_MAX_CONCURRENT=5             # concurrency cap (default 5)
 export OMNIRUN_OUTPUTS_DEST=/var/lib/omnirun/agent-outputs   # copy outputs here
-export ANTHROPIC_SKILLS_HOST=...            # skills CDN host (see limitations)
 
 # Must NOT be set — the worker refuses to start if it is:
 unset ANTHROPIC_API_KEY
@@ -214,8 +214,7 @@ manually and probe it:
 ```bash
 SID=$(curl -fsS -X POST "$OMNIRUN_API/sandboxes" \
   -H "X-API-Key: $OMNIRUN_API_KEY" -H "Content-Type: application/json" \
-  -d '{"templateID":"claude-agent","internet":true,
-       "network":{"allowDomains":["api.anthropic.com"],"allowIPs":["8.8.8.8","8.8.4.4"]}}' \
+  -d '{"templateID":"claude-agent","internet":true}' \
   | jq -r '.sandboxID')
 
 # ant present + filesystem layout:

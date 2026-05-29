@@ -14,8 +14,8 @@ set -euo pipefail
 #
 # This script:
 #   1. Creates a fresh OmniRun microVM (templateID=claude-agent) via the local
-#      API, with a pinned egress allowlist (api.anthropic.com + DNS + skills
-#      CDN) and ONLY the ANTHROPIC_ENVIRONMENT_* / per-session env vars.
+#      API, with OPEN egress (agents need package registries / git) and ONLY
+#      the ANTHROPIC_ENVIRONMENT_* / per-session env vars.
 #   2. Starts `ant beta:worker run` inside the VM (background command).
 #   3. Polls the command until the worker process exits.
 #   4. Optionally downloads /mnt/session/outputs back to the host.
@@ -44,20 +44,21 @@ OUTPUTS_DEST="${OMNIRUN_OUTPUTS_DEST:-}"
 POLL_INTERVAL_SECS="${OMNIRUN_POLL_INTERVAL:-5}"
 MAX_RUNTIME_SECS="${OMNIRUN_MAX_RUNTIME:-7200}"
 
-# Egress allowlist for the sandbox. Anthropic's API is required. We also pin a
-# fixed public DNS resolver (so the in-VM resolver, 8.8.8.8/8.8.4.4, can answer)
-# and the skills CDN host.
+# Egress posture: OPEN by default. Real coding agents need arbitrary egress
+# (pypi, npm, github, apt, ...) for their tool calls, so we do NOT restrict it.
 #
-# TODO(verify-on-box): confirm the EXACT skills-download host during end-to-end
-# verification (capture it from `ant` debug logs or a tcpdump while a session
-# downloads skills) and replace the placeholder below. Until confirmed, skills
-# downloads may be blocked by the allowlist.
-ALLOW_DOMAINS_JSON='["api.anthropic.com"]'
-ALLOW_IPS_JSON='["8.8.8.8","8.8.4.4"]'   # fixed DNS resolvers used by the VM
-SKILLS_CDN_HOST="${ANTHROPIC_SKILLS_HOST:-}"   # e.g. "storage.googleapis.com" — TODO confirm
-if [ -n "$SKILLS_CDN_HOST" ]; then
-    ALLOW_DOMAINS_JSON="[\"api.anthropic.com\",\"${SKILLS_CDN_HOST}\"]"
-fi
+# Verified on-box (2026-05-29) with `omni-sniproxy --log-only` over real
+# sessions: Anthropic infra (model + tool round-trips) uses ONLY
+# api.anthropic.com — there is no separate skills-CDN host (skills are served
+# via the API). But enforcing an api.anthropic.com-only allowlist would block
+# agent package installs (confirmed: pip → pypi.org dropped), so tight
+# enforcement is intentionally NOT enabled here.
+#
+# To HARDEN a deployment (lock egress to specific hosts), add `sniProxy: true`
+# plus an `allowDomains` list to the create body below — that activates the
+# in-netns TLS-SNI proxy (cmd/omni-sniproxy). It blocks every host not listed
+# (including package registries), so only enable it for agents that don't need
+# external resources.
 
 # ----------------------------------------------------------------------------
 # Validate required env
@@ -107,8 +108,6 @@ fi
 # envVars carries ONLY the environment + per-session vars. NEVER the org API key.
 CREATE_BODY=$(jq -n \
     --arg tid "$TEMPLATE_ID" \
-    --argjson allow_domains "$ALLOW_DOMAINS_JSON" \
-    --argjson allow_ips "$ALLOW_IPS_JSON" \
     --arg env_key "$ANTHROPIC_ENVIRONMENT_KEY" \
     --arg env_id "$ANTHROPIC_ENVIRONMENT_ID" \
     --arg session_id "$ANTHROPIC_SESSION_ID" \
@@ -117,10 +116,6 @@ CREATE_BODY=$(jq -n \
     '{
         templateID: $tid,
         internet: true,
-        network: {
-            allowDomains: $allow_domains,
-            allowIPs: $allow_ips
-        },
         envVars: {
             ANTHROPIC_ENVIRONMENT_KEY: $env_key,
             ANTHROPIC_ENVIRONMENT_ID: $env_id,
