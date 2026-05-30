@@ -96,7 +96,7 @@ log() { echo "spawn.sh[${ANTHROPIC_SESSION_ID}]: $*" >&2; }
 # ----------------------------------------------------------------------------
 # Concurrency cap
 # ----------------------------------------------------------------------------
-ACTIVE=$(api GET /sandboxes | jq "[.[] | select(.template_id == \"${TEMPLATE_ID}\")] | length" 2>/dev/null || echo 0)
+ACTIVE=$(api GET /sandboxes | jq "[.[] | select((.templateID // .template_id) == \"${TEMPLATE_ID}\")] | length" 2>/dev/null || echo 0)
 if [ "$ACTIVE" -ge "$MAX_CONCURRENT" ]; then
     log "concurrency cap reached (${ACTIVE}/${MAX_CONCURRENT} active ${TEMPLATE_ID} sandboxes); refusing session"
     exit 75   # EX_TEMPFAIL — signals ant this work could not be claimed now
