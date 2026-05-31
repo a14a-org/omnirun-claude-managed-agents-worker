@@ -58,13 +58,21 @@ func main() {
 	}
 }
 
-func run(antBin, spawnPath string) error {
+// missingEnv returns, in order, the names from keys whose value reported by
+// lookup is empty. It is a pure helper (lookup is injected) so the
+// fail-fast validation can be tested without touching the process environment.
+func missingEnv(keys []string, lookup func(string) string) []string {
 	var missing []string
-	for _, k := range requiredEnv {
-		if os.Getenv(k) == "" {
+	for _, k := range keys {
+		if lookup(k) == "" {
 			missing = append(missing, k)
 		}
 	}
+	return missing
+}
+
+func run(antBin, spawnPath string) error {
+	missing := missingEnv(requiredEnv, os.Getenv)
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env vars: %v (set them on the host; do NOT set ANTHROPIC_API_KEY here)", missing)
 	}
