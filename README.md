@@ -133,6 +133,21 @@ poller.
    Note its environment ID (`env_...`) and generate an environment key.
 2. Pick an OmniRun endpoint that has the `claude-agent` template (hosted
    `https://api.omnirun.io`, or your own deployment) and get an API key.
+
+   Verify the endpoint + key + template in one call (creates and deletes a
+   sandbox; a `201` means you're good to go):
+
+   ```bash
+   SID=$(curl -fsS -X POST "$OMNIRUN_API/sandboxes" \
+     -H "X-API-Key: $OMNIRUN_API_KEY" -H "Content-Type: application/json" \
+     -d '{"templateID":"claude-agent","internet":true}' | jq -r '.sandboxID // .id')
+   echo "created $SID"
+   curl -fsS -X DELETE "$OMNIRUN_API/sandboxes/$SID" -H "X-API-Key: $OMNIRUN_API_KEY"
+   ```
+
+   A `400 unknown template` or `5xx` means that endpoint doesn't have the
+   `claude-agent` template built — pick a different endpoint or build it (see
+   the self-host-the-executor section).
 3. Run the poller:
 
    ```bash
