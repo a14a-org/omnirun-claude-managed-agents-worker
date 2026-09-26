@@ -1,7 +1,8 @@
 # Contributing
 
 Thanks for your interest in improving the OmniRun worker for Claude Managed
-Agents.
+Agents. This project is licensed under the [Apache License 2.0](./LICENSE); by
+contributing you agree that your contribution is licensed under the same terms.
 
 ## Developer Certificate of Origin (DCO)
 

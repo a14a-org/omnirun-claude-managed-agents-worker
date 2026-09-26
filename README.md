@@ -120,12 +120,23 @@ the OmniRun API over HTTP, so it runs anywhere a container runs (a small VM, a
 PaaS, your laptop).
 
 **To also self-host the executor** (advanced): a Linux host with `/dev/kvm`
-(bare metal or a nested-virt VM) running OmniRun, with Firecracker, LVM
+(bare metal or a nested-virt VM) running OmniRun (open source, Apache-2.0, at
+[github.com/a14a-org/omnirun](https://github.com/a14a-org/omnirun)), with Firecracker, LVM
 (`vg0/thinpool`), the in-VM agent at `/opt/omnirun/bin/agent`, and a kernel at
 `/opt/omnirun/vmlinux`. The `build-rootfs` / `create-snapshot` scripts build the
 `claude-agent` template on that host. Cloud Run, DigitalOcean App Platform, and
 standard droplets cannot run the executor (no `/dev/kvm`); they can still run the
 poller.
+
+## Self-hosting
+
+The worker talks to whichever OmniRun API you give it: set `OMNIRUN_API` to the
+base URL of your own deployment (for example `http://127.0.0.1:8080` on the
+executor host) and `OMNIRUN_API_KEY` to an API key issued by it. The OmniRun
+server is open source (Apache-2.0) at
+[github.com/a14a-org/omnirun](https://github.com/a14a-org/omnirun); see
+[Full setup](#full-setup-without-docker-or-self-hosting-the-executor) below for
+building the `claude-agent` template on your own host.
 
 ## Quick start (Docker)
 
@@ -290,5 +301,8 @@ curl -fsS -X DELETE "$OMNIRUN_API/sandboxes/$SID" -H "X-API-Key: $OMNIRUN_API_KE
 
 ## License
 
-[AGPL-3.0](./LICENSE). Contributions require a DCO sign-off — see
-[CONTRIBUTING.md](./CONTRIBUTING.md).
+[Apache License 2.0](./LICENSE). See [NOTICE](./NOTICE). Contributions require a DCO
+sign-off — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+Versions published before the relicense remain available under the AGPL-3.0
+license they were released with.
