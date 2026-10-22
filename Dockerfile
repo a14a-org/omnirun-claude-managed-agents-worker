@@ -9,7 +9,7 @@
 #     -e OMNIRUN_API=https://api.omnirun.io -e OMNIRUN_API_KEY=omr_... \
 #     omnirun-claude-worker
 
-FROM golang:1.26-bookworm AS build
+FROM golang:1.27.3-bookworm AS build
 WORKDIR /src
 COPY go.mod ./
 COPY cmd ./cmd
